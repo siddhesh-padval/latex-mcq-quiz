@@ -1,105 +1,109 @@
 let questions = [];
-let currentQuestion = 0;
+let currentQuestionIndex = 0;
 let score = 0;
-let username = '';
+let username = "";
 
-async function loadQuestionsFromTex() {
-  try {
-    const response = await fetch('questions.tex?' + Date.now());
-    if (!response.ok) throw new Error('Could not load questions.tex');
-    const tex = await response.text();
-
-    const questionBlocks = tex
-      .split('\\question')
-      .slice(1)
-      .map(block => block.trim());
-
-    questions = questionBlocks.map(block => {
-      const questionMatch = block.match(/\{([^}]*)\}/);
-      const question = questionMatch ? questionMatch[1] : '';
-
-      const optionMatches = [...block.matchAll(/\\option\{([^}]*)\}/g)];
-      const options = optionMatches.map(m => m[1]);
-
-      const answerMatch = block.match(/\\answer\{(\d)\}/);
-      const answerIndex = answerMatch ? parseInt(answerMatch[1]) : 1;
-
-      return { question, options, answer: answerIndex };
-    });
-  } catch (err) {
-    alert('Error loading questions.tex. Make sure the file exists and server is running.');
-    console.error(err);
-  }
+// Parse LaTeX-style questions from the .tex file
+function parseQuestions(texContent) {
+  const qBlocks = texContent.split("\\question").slice(1);
+  return qBlocks.map(block => {
+    const questionMatch = block.match(/\{([^}]*)\}/);
+    const options = [...block.matchAll(/\\option\{([^}]*)\}/g)].map(m => m[1]);
+    const answerMatch = block.match(/\\answer\{([^}]*)\}/);
+    return {
+      text: questionMatch ? questionMatch[1].trim() : "",
+      options: options,
+      answer: answerMatch ? answerMatch[1].trim() : ""
+    };
+  });
 }
 
-function showQuestion() {
-  if (currentQuestion >= questions.length) {
-    document.getElementById('question-box').innerHTML = `
-      <h3>Quiz Completed!</h3>
-      <p>${username}, your score is ${score}/${questions.length}</p>
-    `;
-    localStorage.setItem(username, score);
-    document.getElementById('next-btn').style.display = 'none';
+async function loadQuestions() {
+  const response = await fetch("questions.tex?" + Date.now());
+  const text = await response.text();
+  questions = parseQuestions(text);
+}
+
+function startQuiz() {
+  username = document.getElementById("username").value.trim();
+  if (!username) {
+    alert("Please enter your name.");
     return;
   }
 
-  const q = questions[currentQuestion];
-  const box = document.getElementById('question-box');
-
-  box.innerHTML = `
-    <h3>${q.question}</h3>
-    ${q.options
-      .map(
-        (opt, i) => `
-        <label class="option">
-          <input type="radio" name="option" value="${i + 1}">
-          ${opt}
-        </label><br>`
-      )
-      .join('')}
-    <p id="feedback"></p>
-  `;
-
-  // Enable option click check
-  document.querySelectorAll('input[name="option"]').forEach(input => {
-    input.addEventListener('change', () => checkAnswer(parseInt(input.value)));
-  });
+  document.getElementById("start-screen").style.display = "none";
+  document.getElementById("quiz-container").style.display = "block";
+  document.getElementById("welcome").textContent = `Welcome, ${username}!`;
+  score = 0;
+  currentQuestionIndex = 0;
+  showQuestion();
 }
 
-function checkAnswer(selectedValue) {
-  const q = questions[currentQuestion];
-  const feedback = document.getElementById('feedback');
-  const options = document.querySelectorAll('.option');
+function showQuestion() {
+  const q = questions[currentQuestionIndex];
+  const questionElement = document.getElementById("question");
+  const optionsContainer = document.getElementById("options");
+  const feedback = document.getElementById("feedback");
+  const nextBtn = document.getElementById("next-btn");
 
-  options.forEach((label, i) => {
-    if (i + 1 === q.answer) label.style.color = 'green';
-    else if (i + 1 === selectedValue) label.style.color = 'red';
+  questionElement.innerHTML = q.text;
+  optionsContainer.innerHTML = "";
+  feedback.textContent = "";
+  nextBtn.style.display = "none";
+
+  q.options.forEach(option => {
+    const btn = document.createElement("button");
+    btn.className = "option-btn";
+    btn.innerHTML = option;
+    btn.onclick = () => checkAnswer(option, q.answer, btn);
+    optionsContainer.appendChild(btn);
   });
 
-  if (selectedValue === q.answer) {
-    feedback.textContent = '✅ Correct!';
+  // Render LaTeX if needed
+  if (window.MathJax) MathJax.typesetPromise();
+}
+
+function checkAnswer(selected, correct, btn) {
+  const feedback = document.getElementById("feedback");
+  const optionButtons = document.querySelectorAll(".option-btn");
+  optionButtons.forEach(b => (b.disabled = true));
+
+  if (selected.trim() === correct.trim()) {
+    feedback.textContent = "✅ Correct!";
+    feedback.style.color = "green";
     score++;
   } else {
-    feedback.textContent = `❌ Wrong! Correct answer: ${q.options[q.answer - 1]}`;
+    feedback.textContent = `❌ Wrong! Correct answer: ${correct}`;
+    feedback.style.color = "red";
   }
 
-  // Disable all options after answering
-  document.querySelectorAll('input[name="option"]').forEach(i => (i.disabled = true));
+  document.getElementById("next-btn").style.display = "inline-block";
+  document.getElementById("score").textContent = `Score: ${score}/${questions.length}`;
+
+  // Save score locally
+  localStorage.setItem(username, score);
 }
 
-document.getElementById('start-btn').addEventListener('click', async () => {
-  username = document.getElementById('username').value.trim();
-  if (!username) return alert('Please enter your name');
+function nextQuestion() {
+  currentQuestionIndex++;
+  if (currentQuestionIndex < questions.length) {
+    showQuestion();
+  } else {
+    showResults();
+  }
+}
 
-  await loadQuestionsFromTex();
-  if (questions.length === 0) return;
+function showResults() {
+  document.getElementById("question-container").innerHTML =
+    `<h2>Quiz complete!</h2><p>Your final score is ${score}/${questions.length}.</p>`;
+  document.getElementById("next-btn").style.display = "none";
+  document.getElementById("feedback").textContent = "";
+  if (window.MathJax) MathJax.typesetPromise();
+}
 
-  document.getElementById('user-section').style.display = 'none';
-  document.getElementById('quiz-section').style.display = 'block';
-  showQuestion();
-});
+// Button listeners
+document.getElementById("start-btn").addEventListener("click", startQuiz);
+document.getElementById("next-btn").addEventListener("click", nextQuestion);
 
-document.getElementById('next-btn').addEventListener('click', () => {
-  currentQuestion++;
-  showQuestion();
-});
+// Load questions when the page loads
+window.addEventListener("load", loadQuestions);
