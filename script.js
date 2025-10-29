@@ -5,7 +5,7 @@ let username = '';
 
 async function loadQuestionsFromTex() {
   try {
-    const response = await fetch('questions.tex');
+    const response = await fetch('questions.tex?' + Date.now());
     if (!response.ok) throw new Error('Could not load questions.tex');
     const tex = await response.text();
 
